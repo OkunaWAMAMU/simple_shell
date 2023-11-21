@@ -1,39 +1,124 @@
 #include "main.h"
+
 /**
-  *main- readline to print
-  *
-  *Return: always 0 (success)
-  */
-
-
-
-int main(void)
+ * display_prompt - Displays the shell prompt.
+ */
+void display_prompt(void)
 {
-	char *line = NULL;
-	size_t len = 0;
-	ssize_t read;
-	char prompt[] = "$ ";
+	write(STDOUT_FILENO, "#cisfun$ ", 9);
+}
 
-	write(1, prompt, strlen(prompt));
+/**
+ * read_input - Reads input from the user using custom_getline.
+ * @input: Pointer to store the input string.
+ * @len: Pointer to the length of the input string.
+ *
+ * Return: Returns 1 if successful, 0 on failure.
+ */
+int read_input(char **input, size_t *len)
+{
+	ssize_t read = custom_getline(input, len, stdin);
 
-		fflush(stdout); /* Ensure the prompt is displayed immediately */
+	return (read != -1);
+}
 
-		read = getline(&line, &len, stdin);
-
-		if (read != -1)
-		{
-
-		size_t newline_p = strcspn(line, "\n");
-
-		if (newline_p < (size_t)read)
-			line[newline_p] = '\0';
-		char to_out[1024];
-		int message_lenth = snprintf(to_out, sizeof(to_out), "%s\n", line);
-
-
-		write(1, to_out, message_lenth);
+/**
+ * handle_exit - Handles the "exit" command.
+ * @input: The user input string.
+ *
+ * Return: Returns 1 if the exit command is encountered, 0 otherwise.
+ */
+int handle_exit(const char *input)
+{
+	if (strcmp(input, "exit") == 0)
+	{
+		return (1);
 	}
-
-	free(line);
 	return (0);
 }
+
+/**
+ * execute_command - Executes the command using fork and execve.
+ * @input: The user input string.
+ */
+void execute_command(__attribute__((unused)) const char *input)
+{
+	pid_t child_pid;
+	int status;
+	char *command_path = find_path(input);
+
+	if (command_path == NULL)
+	{
+		write(STDERR_FILENO, "Command not found\n", 18);
+		return;
+	}
+
+	child_pid = fork();
+	if (child_pid == -1)
+	{
+		perror("fork");
+		free(command_path);
+		exit(EXIT_FAILURE);
+	}
+	if (child_pid == 0)
+	{
+		char *temp_args[] = {(char *)input, NULL};
+
+		if (execve(command_path, temp_args, NULL) == -1)
+		{
+			perror("execve");
+			free(command_path);
+			exit(EXIT_FAILURE);
+		}
+	}
+	else
+	{
+		/* Parent process */
+		waitpid(child_pid, &status, 0);
+		if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+		{
+			write(STDERR_FILENO, "Command execution failed\n", 26);
+		}
+	}
+
+	free(command_path);
+}
+/**
+ * prompt - Main prompt function to run the shell.
+ */
+void prompt(void)
+{
+	char *input = NULL;
+	size_t len = 0;
+
+	while (1)
+	{
+		display_prompt();
+
+		if (!read_input(&input, &len))
+		{
+			if (isatty(STDIN_FILENO))
+			{
+				write(STDOUT_FILENO, "\n", 1);
+			}
+			free(input);
+			exit(0);
+		}
+
+		if (input[len - 1] == '\n')
+		{
+			input[len - 1] = '\0';
+		}
+
+		if (handle_exit(input))
+		{
+			free(input);
+			exit(0);
+		}
+
+		execute_command(input);
+
+		free(input);
+	}
+}
+
